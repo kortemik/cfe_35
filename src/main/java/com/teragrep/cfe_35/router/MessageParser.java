@@ -51,14 +51,19 @@ import com.teragrep.cfe_35.router.targets.DeadLetter;
 import com.teragrep.cfe_35.router.targets.Inspection;
 import com.teragrep.rlo_06.*;
 
+import com.teragrep.rlp_01.RelpFrameTX;
 import com.teragrep.rlp_03.channel.socket.TransportInfo;
+import com.teragrep.rlp_03.frame.RelpFrame;
 import com.teragrep.rlp_03.frame.delegate.FrameContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 
 import static com.codahale.metrics.MetricRegistry.name;
@@ -149,7 +154,34 @@ public class MessageParser implements Consumer<FrameContext>, AutoCloseable {
                     }
                 }
 
-                targetRouting.route(routingData);
+                List<CompletableFuture<RelpFrame>> transmitted = targetRouting.route(routingData);
+
+                /*
+                CompletableFuture<String> sad = new CompletableFuture<>();
+                CompletableFuture<String> das = new CompletableFuture<>();
+                
+                List<CompletableFuture<String>> lost = new LinkedList<>();
+                
+                lost.add(sad);
+                lost.add(das);
+                
+                CompletableFuture<String>[] completableFutures = new CompletableFuture[0];
+                
+                CompletableFuture.allOf(lost.toArray(completableFutures)).thenRun()
+                 */
+                CompletableFuture<RelpFrame>[] completableFuturesArrayTemplate = new CompletableFuture[0];
+
+                CompletableFuture<RelpFrame>[] completableFutures = transmitted
+                        .toArray(completableFuturesArrayTemplate);
+
+                // TODO create error handler, that re-creates the client when error occurs
+
+                CompletableFuture.allOf(completableFutures).thenRun(() -> {
+                    // respond that it was processed ok
+                    RelpFrameTX relpFrameTX = new RelpFrameTX("rsp", "200 OK".getBytes(StandardCharsets.UTF_8));
+                    relpFrameTX.setTransactionNumber(frameContext.relpFrame().txn().toInt());
+                    frameContext.establishedContext().relpWrite().accept(Collections.singletonList(relpFrameTX));
+                });
             }
         }
         catch (Exception e) {
@@ -170,4 +202,5 @@ public class MessageParser implements Consumer<FrameContext>, AutoCloseable {
         targetRouting.close();
         this.connections.dec();
     }
+
 }

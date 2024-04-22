@@ -48,10 +48,13 @@ package com.teragrep.cfe_35.router;
 import com.codahale.metrics.MetricRegistry;
 import com.teragrep.cfe_35.config.RoutingConfig;
 
+import com.teragrep.rlp_03.channel.context.ConnectContextFactory;
 import com.teragrep.rlp_03.channel.socket.PlainFactory;
+import com.teragrep.rlp_03.client.ClientFactory;
+import com.teragrep.rlp_03.eventloop.EventLoop;
+import com.teragrep.rlp_03.eventloop.EventLoopFactory;
 import com.teragrep.rlp_03.frame.delegate.DefaultFrameDelegate;
 import com.teragrep.rlp_03.frame.delegate.FrameContext;
-import com.teragrep.rlp_03.server.Server;
 import com.teragrep.rlp_03.server.ServerFactory;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
@@ -91,22 +94,44 @@ public class TargetRoutingTest {
         Consumer<FrameContext> cbFunction = relpFrameServerRX -> recordList
                 .add(relpFrameServerRX.relpFrame().payload().toBytes());
 
-        ExecutorService executorService = Executors.newSingleThreadExecutor();
+        EventLoopFactory eventLoopFactory = new EventLoopFactory();
+        EventLoop eventLoop = eventLoopFactory.create(); // FIXME this is not cleaned up
+        Thread eventLoopThread = new Thread(eventLoop);
+        eventLoopThread.start(); // FIXME this is not cleaned up
+
+        ExecutorService executorService = Executors.newSingleThreadExecutor(); // FIXME this is not cleaned up
+
         ServerFactory serverFactory = new ServerFactory(
+                eventLoop,
                 executorService,
                 new PlainFactory(),
                 () -> new DefaultFrameDelegate(cbFunction)
         );
-        Server server = serverFactory.create(port);
-        Thread serverThread = new Thread(server);
-        serverThread.start();
+        serverFactory.create(port);
     }
 
     @Test
     public void testSpool() throws IOException {
         System.setProperty("routingTargetsConfig", "src/test/resources/targets.json");
+
+        EventLoopFactory eventLoopFactory = new EventLoopFactory();
+        EventLoop eventLoop = eventLoopFactory.create(); // FIXME this is not cleaned up
+        Thread eventLoopThread = new Thread(eventLoop);
+        eventLoopThread.start(); // FIXME this is not cleaned up
+
+        ExecutorService executorService = Executors.newFixedThreadPool(4); // FIXME this is not cleaned up
+
+        ConnectContextFactory connectContextFactory = new ConnectContextFactory(executorService, new PlainFactory());
+        ClientFactory clientFactory = new ClientFactory(connectContextFactory, eventLoop);
+
         RoutingConfig routingConfig = new RoutingConfig();
-        try (TargetRouting targetRouting = new ParallelTargetRouting(routingConfig, this.metricRegistry)) {
+        try (
+                TargetRouting targetRouting = new ParallelTargetRouting(
+                        routingConfig,
+                        this.metricRegistry,
+                        clientFactory
+                )
+        ) {
             targetRouting
                     .route(new RoutingData("test1".getBytes(StandardCharsets.UTF_8), Collections.singleton("spool")));
         }
@@ -119,8 +144,25 @@ public class TargetRoutingTest {
     @Test
     public void testFailed() throws IOException {
         System.setProperty("routingTargetsConfig", "src/test/resources/targets.json");
+
+        EventLoopFactory eventLoopFactory = new EventLoopFactory();
+        EventLoop eventLoop = eventLoopFactory.create(); // FIXME this is not cleaned up
+        Thread eventLoopThread = new Thread(eventLoop);
+        eventLoopThread.start(); // FIXME this is not cleaned up
+
+        ExecutorService executorService = Executors.newFixedThreadPool(4); // FIXME this is not cleaned up
+
+        ConnectContextFactory connectContextFactory = new ConnectContextFactory(executorService, new PlainFactory());
+        ClientFactory clientFactory = new ClientFactory(connectContextFactory, eventLoop);
+
         RoutingConfig routingConfig = new RoutingConfig();
-        try (TargetRouting targetRouting = new ParallelTargetRouting(routingConfig, this.metricRegistry)) {
+        try (
+                TargetRouting targetRouting = new ParallelTargetRouting(
+                        routingConfig,
+                        this.metricRegistry,
+                        clientFactory
+                )
+        ) {
             Assertions.assertThrows(IllegalArgumentException.class, () -> {
                 targetRouting
                         .route(new RoutingData("test2".getBytes(StandardCharsets.UTF_8), Collections.singleton("no-such-thing")));
@@ -132,9 +174,26 @@ public class TargetRoutingTest {
     @Test
     public void testInspection() throws IOException {
         System.setProperty("routingTargetsConfig", "src/test/resources/targets.json");
+
+        EventLoopFactory eventLoopFactory = new EventLoopFactory();
+        EventLoop eventLoop = eventLoopFactory.create(); // FIXME this is not cleaned up
+        Thread eventLoopThread = new Thread(eventLoop);
+        eventLoopThread.start(); // FIXME this is not cleaned up
+
+        ExecutorService executorService = Executors.newFixedThreadPool(4); // FIXME this is not cleaned up
+
+        ConnectContextFactory connectContextFactory = new ConnectContextFactory(executorService, new PlainFactory());
+        ClientFactory clientFactory = new ClientFactory(connectContextFactory, eventLoop);
+
         RoutingConfig routingConfig = new RoutingConfig();
 
-        try (TargetRouting targetRouting = new ParallelTargetRouting(routingConfig, this.metricRegistry)) {
+        try (
+                TargetRouting targetRouting = new ParallelTargetRouting(
+                        routingConfig,
+                        this.metricRegistry,
+                        clientFactory
+                )
+        ) {
             targetRouting
                     .route(new RoutingData("test3".getBytes(StandardCharsets.UTF_8), Collections.singleton("inspection")));
         }
@@ -146,9 +205,26 @@ public class TargetRoutingTest {
     @Test
     public void testSiem0() throws IOException {
         System.setProperty("routingTargetsConfig", "src/test/resources/targets.json");
+
+        EventLoopFactory eventLoopFactory = new EventLoopFactory();
+        EventLoop eventLoop = eventLoopFactory.create(); // FIXME this is not cleaned up
+        Thread eventLoopThread = new Thread(eventLoop);
+        eventLoopThread.start(); // FIXME this is not cleaned up
+
+        ExecutorService executorService = Executors.newFixedThreadPool(4); // FIXME this is not cleaned up
+
+        ConnectContextFactory connectContextFactory = new ConnectContextFactory(executorService, new PlainFactory());
+        ClientFactory clientFactory = new ClientFactory(connectContextFactory, eventLoop);
+
         RoutingConfig routingConfig = new RoutingConfig();
 
-        try (TargetRouting targetRouting = new ParallelTargetRouting(routingConfig, this.metricRegistry)) {
+        try (
+                TargetRouting targetRouting = new ParallelTargetRouting(
+                        routingConfig,
+                        this.metricRegistry,
+                        clientFactory
+                )
+        ) {
             targetRouting
                     .route(new RoutingData("test4".getBytes(StandardCharsets.UTF_8), Collections.singleton("siem0")));
         }
@@ -160,8 +236,25 @@ public class TargetRoutingTest {
     @Test
     public void testHDFS() throws IOException {
         System.setProperty("routingTargetsConfig", "src/test/resources/targets.json");
+
+        EventLoopFactory eventLoopFactory = new EventLoopFactory();
+        EventLoop eventLoop = eventLoopFactory.create(); // FIXME this is not cleaned up
+        Thread eventLoopThread = new Thread(eventLoop);
+        eventLoopThread.start(); // FIXME this is not cleaned up
+
+        ExecutorService executorService = Executors.newFixedThreadPool(4); // FIXME this is not cleaned up
+
+        ConnectContextFactory connectContextFactory = new ConnectContextFactory(executorService, new PlainFactory());
+        ClientFactory clientFactory = new ClientFactory(connectContextFactory, eventLoop);
+
         RoutingConfig routingConfig = new RoutingConfig();
-        try (TargetRouting targetRouting = new ParallelTargetRouting(routingConfig, this.metricRegistry)) {
+        try (
+                TargetRouting targetRouting = new ParallelTargetRouting(
+                        routingConfig,
+                        this.metricRegistry,
+                        clientFactory
+                )
+        ) {
             targetRouting
                     .route(new RoutingData("test5".getBytes(StandardCharsets.UTF_8), Collections.singleton("hdfs")));
         }
@@ -173,8 +266,25 @@ public class TargetRoutingTest {
     @Test
     public void testDeadLetter() throws IOException {
         System.setProperty("routingTargetsConfig", "src/test/resources/targets.json");
+
+        EventLoopFactory eventLoopFactory = new EventLoopFactory();
+        EventLoop eventLoop = eventLoopFactory.create(); // FIXME this is not cleaned up
+        Thread eventLoopThread = new Thread(eventLoop);
+        eventLoopThread.start(); // FIXME this is not cleaned up
+
+        ExecutorService executorService = Executors.newFixedThreadPool(4); // FIXME this is not cleaned up
+
+        ConnectContextFactory connectContextFactory = new ConnectContextFactory(executorService, new PlainFactory());
+        ClientFactory clientFactory = new ClientFactory(connectContextFactory, eventLoop);
+
         RoutingConfig routingConfig = new RoutingConfig();
-        try (TargetRouting targetRouting = new ParallelTargetRouting(routingConfig, this.metricRegistry)) {
+        try (
+                TargetRouting targetRouting = new ParallelTargetRouting(
+                        routingConfig,
+                        this.metricRegistry,
+                        clientFactory
+                )
+        ) {
             targetRouting
                     .route(new RoutingData("test6".getBytes(StandardCharsets.UTF_8), Collections.singleton("dead-letter")));
         }

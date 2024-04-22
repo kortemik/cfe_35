@@ -21,7 +21,7 @@
     <dependency>
       <groupId>com.teragrep</groupId>
       <artifactId>rlp_03</artifactId>
-      <version>4.0.0</version>
+      <version>5.0.0</version>
     </dependency>
     <dependency>
       <groupId>com.teragrep</groupId>
@@ -267,6 +267,8 @@
         <version>3.12.1</version>
         <configuration>
           <compilerArgument>-Xlint:all</compilerArgument>
+          <source>9</source>
+          <target>9</target>
         </configuration>
       </plugin>
       <plugin>

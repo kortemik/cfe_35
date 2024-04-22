@@ -49,10 +49,13 @@ import com.codahale.metrics.MetricRegistry;
 import com.codahale.metrics.Slf4jReporter;
 import com.codahale.metrics.jmx.JmxReporter;
 import com.teragrep.cfe_35.config.RoutingConfig;
+import com.teragrep.rlp_03.eventloop.EventLoop;
+import com.teragrep.rlp_03.eventloop.EventLoopFactory;
+import com.teragrep.rlp_03.channel.context.ConnectContextFactory;
 import com.teragrep.rlp_03.channel.socket.PlainFactory;
+import com.teragrep.rlp_03.client.ClientFactory;
 import com.teragrep.rlp_03.frame.delegate.DefaultFrameDelegate;
 import com.teragrep.rlp_03.frame.delegate.FrameDelegate;
-import com.teragrep.rlp_03.server.Server;
 import com.teragrep.rlp_03.server.ServerFactory;
 import io.prometheus.client.CollectorRegistry;
 import io.prometheus.client.dropwizard.DropwizardExports;
@@ -71,12 +74,14 @@ import java.util.function.Supplier;
 
 public class Router implements AutoCloseable {
 
-    private final Server server;
     private final RoutingLookup routingLookup;
     private final MetricRegistry metricRegistry = new MetricRegistry();
     private final JmxReporter jmxReporter;
     private final Slf4jReporter slf4jReporter;
     private final org.eclipse.jetty.server.Server jettyServer;
+    private final ExecutorService executorService;
+    private final EventLoop eventLoop;
+    private final Thread eventLoopThread;
 
     public Router(RoutingConfig routingConfig) throws IOException {
         this.jmxReporter = JmxReporter.forRegistry(metricRegistry).build();
@@ -89,29 +94,24 @@ public class Router implements AutoCloseable {
 
         this.routingLookup = new RoutingLookup(routingConfig);
 
-        Supplier<FrameDelegate> routingInstanceSupplier = () -> {
-            TargetRouting targetRouting;
-            try {
-                targetRouting = new ParallelTargetRouting(routingConfig, this.metricRegistry);
-            }
-            catch (IOException e) {
-                throw new UncheckedIOException(e);
-            }
-            MessageParser messageParser = new MessageParser(
-                    this.routingLookup,
-                    targetRouting,
-                    this.metricRegistry,
-                    routingConfig
-            );
-            return new DefaultFrameDelegate(messageParser);
-        };
+        this.executorService = Executors.newFixedThreadPool(routingConfig.getServerThreads());
+        this.eventLoop = new EventLoopFactory().create();
+
+        this.eventLoopThread = new Thread(this.eventLoop);
+        this.eventLoopThread.start();
+
+        Supplier<FrameDelegate> routingInstanceSupplier = getFrameDelegateSupplier(routingConfig);
 
         ExecutorService executorService = Executors.newFixedThreadPool(routingConfig.getServerThreads());
         PlainFactory plainFactory = new PlainFactory();
-        ServerFactory serverFactory = new ServerFactory(executorService, plainFactory, routingInstanceSupplier);
-        this.server = serverFactory.create(routingConfig.getListenPort());
-        Thread serverThread = new Thread(server);
-        serverThread.start();
+
+        ServerFactory serverFactory = new ServerFactory(
+                eventLoop,
+                executorService,
+                plainFactory,
+                routingInstanceSupplier
+        );
+        serverFactory.create(routingConfig.getListenPort());
 
         this.jmxReporter.start();
         this.slf4jReporter.start(1, TimeUnit.MINUTES);
@@ -140,10 +140,38 @@ public class Router implements AutoCloseable {
 
     }
 
+    private Supplier<FrameDelegate> getFrameDelegateSupplier(RoutingConfig routingConfig) {
+        ConnectContextFactory connectContextFactory = new ConnectContextFactory(executorService, new PlainFactory());
+
+        ClientFactory clientFactory = new ClientFactory(connectContextFactory, null);
+
+        Supplier<FrameDelegate> routingInstanceSupplier = () -> {
+            TargetRouting targetRouting;
+            try {
+                targetRouting = new ParallelTargetRouting(routingConfig, this.metricRegistry, clientFactory);
+            }
+            catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+            MessageParser messageParser = new MessageParser(
+                    this.routingLookup,
+                    targetRouting,
+                    this.metricRegistry,
+                    routingConfig
+            );
+            return new DefaultFrameDelegate(messageParser);
+        };
+        return routingInstanceSupplier;
+    }
+
     @Override
     public void close() throws Exception {
         // stop after done
-        server.stop();
+        // FIXME close outputs?
+        eventLoop.stop();
+        executorService.shutdown();
+        // TODO executorService.awaitTermination(1, TimeUnit.SECONDS); or something?
+        eventLoopThread.join();
         slf4jReporter.close();
         jmxReporter.close();
         jettyServer.stop();

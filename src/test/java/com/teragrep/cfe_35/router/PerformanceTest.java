@@ -49,9 +49,10 @@ import com.teragrep.cfe_35.config.RoutingConfig;
 import com.teragrep.rlp_01.RelpBatch;
 import com.teragrep.rlp_01.RelpConnection;
 import com.teragrep.rlp_03.channel.socket.PlainFactory;
+import com.teragrep.rlp_03.eventloop.EventLoop;
+import com.teragrep.rlp_03.eventloop.EventLoopFactory;
 import com.teragrep.rlp_03.frame.delegate.FrameContext;
 import com.teragrep.rlp_03.server.ServerFactory;
-import com.teragrep.rlp_03.server.Server;
 import com.teragrep.rlp_03.frame.delegate.DefaultFrameDelegate;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -115,15 +116,21 @@ public class PerformanceTest {
         Consumer<FrameContext> cbFunction = (message) -> {
             count.getAndIncrement();
         };
-        ExecutorService executorService = Executors.newSingleThreadExecutor();
+
+        EventLoopFactory eventLoopFactory = new EventLoopFactory();
+        EventLoop eventLoop = eventLoopFactory.create(); // FIXME this is not cleaned up
+        Thread eventLoopThread = new Thread(eventLoop);
+        eventLoopThread.start(); // FIXME this is not cleaned up
+
+        ExecutorService executorService = Executors.newSingleThreadExecutor(); // FIXME this is not cleaned up
+
         ServerFactory serverFactory = new ServerFactory(
+                eventLoop,
                 executorService,
                 new PlainFactory(),
                 () -> new DefaultFrameDelegate(cbFunction)
         );
-        Server server = serverFactory.create(port);
-        Thread serverThread = new Thread(server);
-        serverThread.start();
+        serverFactory.create(port);
     }
 
     @Test

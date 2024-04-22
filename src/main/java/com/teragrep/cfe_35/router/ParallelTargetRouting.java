@@ -49,8 +49,13 @@ import com.codahale.metrics.Counter;
 import com.codahale.metrics.MetricRegistry;
 import com.teragrep.cfe_35.config.RoutingConfig;
 import com.teragrep.cfe_35.config.json.TargetConfig;
+import com.teragrep.rlp_03.client.Client;
+import com.teragrep.rlp_03.client.ClientFactory;
+import com.teragrep.rlp_03.frame.RelpFrame;
 
 import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.*;
 
@@ -58,12 +63,15 @@ import static com.codahale.metrics.MetricRegistry.name;
 
 public class ParallelTargetRouting implements TargetRouting {
 
-    private final Map<String, Output> outputMap = new HashMap<>();
+    private final Map<String, Client> outputMap = new HashMap<>();
     private final Counter totalRecords;
     private final Counter totalBytes;
-    private final ForkJoinPool commonPool = ForkJoinPool.commonPool();
 
-    public ParallelTargetRouting(RoutingConfig routingConfig, MetricRegistry metricRegistry) throws IOException {
+    public ParallelTargetRouting(
+            RoutingConfig routingConfig,
+            MetricRegistry metricRegistry,
+            ClientFactory clientFactory
+    ) throws IOException {
         this.totalRecords = metricRegistry.counter(name(ParallelTargetRouting.class, "totalRecords"));
         this.totalBytes = metricRegistry.counter(name(ParallelTargetRouting.class, "totalBytes"));
 
@@ -72,6 +80,28 @@ public class ParallelTargetRouting implements TargetRouting {
             String targetName = entry.getKey();
             TargetConfig targetConfig = entry.getValue();
             if (targetConfig.isEnabled()) {
+                String hostname = targetConfig.getTarget();
+                int port = Integer.parseInt(targetConfig.getPort());
+                int connectionTimeout = routingConfig.getConnectionTimeout();
+
+                InetSocketAddress isa = new InetSocketAddress(hostname, port);
+                // TODO count connectLatency
+                try {
+                    byte[] OFFER = ("\nrelp_version=0\nrelp_software=cfe_35\ncommands=" + "syslog" + "\n")
+                            .getBytes(StandardCharsets.US_ASCII);
+                    Client client = clientFactory.open(isa, connectionTimeout, TimeUnit.MILLISECONDS);
+                    CompletableFuture<RelpFrame> openFuture = client.transmit("open", OFFER);
+                    RelpFrame openResponse = openFuture.get();
+                    if (!openResponse.payload().toString().startsWith("200 OK")) {
+                        throw new IllegalStateException("open response for client not 200 OK");
+                    }
+                    this.outputMap.put(targetName, client);
+                }
+                catch (InterruptedException | ExecutionException | TimeoutException e) {
+                    throw new RuntimeException(e);
+                }
+
+                /*
                 Output output = new Output(
                         targetName,
                         targetConfig.getTarget(),
@@ -82,62 +112,36 @@ public class ParallelTargetRouting implements TargetRouting {
                         routingConfig.getReconnectInterval(),
                         metricRegistry
                 );
-                this.outputMap.put(targetName, output);
+                
+                 */
+
             }
         }
     }
 
-    public void route(final RoutingData routingData) {
-        List<RoutingRequest> routingRequests = new ArrayList<>(outputMap.size());
+    public List<CompletableFuture<RelpFrame>> route(final RoutingData routingData) {
+        List<CompletableFuture<RelpFrame>> outputReplyFutures = new ArrayList<>(outputMap.size());
 
         for (String target : routingData.targets) {
-            Output output = outputMap.get(target);
-            if (output == null) {
+            Client client = outputMap.get(target);
+            if (client == null) {
                 throw new IllegalArgumentException("no such target <[" + target + "]>");
             }
 
-            routingRequests.add(new RoutingRequest(output, routingData.payload));
+            CompletableFuture<RelpFrame> transmitted = client.transmit("syslog", routingData.payload);
+            outputReplyFutures.add(transmitted);
 
             totalRecords.inc();
             totalBytes.inc(routingData.payload.length);
         }
-
-        // fanning out
-
-        List<Future<Integer>> a = commonPool.invokeAll(routingRequests);
-
-        for (Future<Integer> fi : a) {
-            try {
-                fi.get();
-            }
-            catch (InterruptedException | ExecutionException e) {
-                throw new RuntimeException(e);
-            }
-        }
-
-    }
-
-    private static class RoutingRequest implements Callable<Integer> {
-
-        private final Output output;
-        private final byte[] data;
-
-        RoutingRequest(Output output, byte[] data) {
-            this.output = output;
-            this.data = data;
-        }
-
-        @Override
-        public Integer call() throws Exception {
-            output.accept(data);
-            return 0;
-        }
+        return outputReplyFutures;
     }
 
     @Override
     public void close() {
-        for (Output output : outputMap.values()) {
-            output.close();
+        for (Client client : outputMap.values()) {
+            client.transmit("close", "".getBytes(StandardCharsets.UTF_8));
+            client.close();
         }
     }
 

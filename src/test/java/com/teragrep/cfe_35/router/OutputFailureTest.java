@@ -50,9 +50,10 @@ import com.teragrep.rlp_01.RelpBatch;
 import com.teragrep.rlp_01.RelpConnection;
 
 import com.teragrep.rlp_03.channel.socket.PlainFactory;
+import com.teragrep.rlp_03.eventloop.EventLoop;
+import com.teragrep.rlp_03.eventloop.EventLoopFactory;
 import com.teragrep.rlp_03.frame.delegate.DefaultFrameDelegate;
 import com.teragrep.rlp_03.frame.delegate.FrameContext;
-import com.teragrep.rlp_03.server.Server;
 import com.teragrep.rlp_03.server.ServerFactory;
 import org.junit.jupiter.api.*;
 import org.opentest4j.AssertionFailedError;
@@ -99,34 +100,40 @@ public class OutputFailureTest {
     }
 
     private final List<byte[]> spoolList = new ArrayList<>();
-    private Server spoolServer;
+    private EventLoop spoolEventLoop;
     private final List<byte[]> inspectionList = new ArrayList<>();
-    private Server inspectionServer;
+    private EventLoop inspectionEventLoop;
 
     public void setupTargets() throws IOException {
-        spoolServer = setup(7601, spoolList);
-        inspectionServer = setup(7602, inspectionList);
+        spoolEventLoop = setup(7601, spoolList);
+        inspectionEventLoop = setup(7602, inspectionList);
     }
 
-    private Server setup(int port, List<byte[]> recordList) throws IOException {
+    private EventLoop setup(int port, List<byte[]> recordList) throws IOException {
         Consumer<FrameContext> cbFunction = relpFrameServerRX -> recordList
                 .add(relpFrameServerRX.relpFrame().payload().toBytes());
 
-        ExecutorService executorService = Executors.newSingleThreadExecutor();
+        EventLoopFactory eventLoopFactory = new EventLoopFactory();
+        EventLoop eventLoop = eventLoopFactory.create(); // FIXME this is not cleaned up
+        Thread eventLoopThread = new Thread(eventLoop);
+        eventLoopThread.start(); // FIXME this is not cleaned up
+
+        ExecutorService executorService = Executors.newSingleThreadExecutor(); // FIXME this is not cleaned up
+
         ServerFactory serverFactory = new ServerFactory(
+                eventLoop,
                 executorService,
                 new PlainFactory(),
                 () -> new DefaultFrameDelegate(cbFunction)
         );
-        Server server = serverFactory.create(port);
-        Thread serverThread = new Thread(server);
-        serverThread.start();
-        return server;
+        serverFactory.create(port);
+
+        return eventLoop;
     }
 
     private void teardownTargets() throws InterruptedException {
-        spoolServer.stop();
-        inspectionServer.stop();
+        spoolEventLoop.stop();
+        inspectionEventLoop.stop();
     }
 
     @Test

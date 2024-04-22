@@ -45,9 +45,14 @@
  */
 package com.teragrep.cfe_35.router;
 
+import com.teragrep.rlp_03.frame.RelpFrame;
+
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+
 public interface TargetRouting extends AutoCloseable {
 
-    void route(RoutingData routingData);
+    List<CompletableFuture<RelpFrame>> route(RoutingData routingData);
 
     @Override
     void close();
