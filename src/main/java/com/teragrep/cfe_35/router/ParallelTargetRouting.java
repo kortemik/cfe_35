@@ -52,6 +52,8 @@ import com.teragrep.cfe_35.config.json.TargetConfig;
 import com.teragrep.rlp_03.client.Client;
 import com.teragrep.rlp_03.client.ClientFactory;
 import com.teragrep.rlp_03.frame.RelpFrame;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -63,19 +65,31 @@ import static com.codahale.metrics.MetricRegistry.name;
 
 public class ParallelTargetRouting implements TargetRouting {
 
+    public static final Logger LOGGER = LoggerFactory.getLogger(ParallelTargetRouting.class);
+
     private final Map<String, Client> outputMap = new HashMap<>();
     private final Counter totalRecords;
     private final Counter totalBytes;
+    private final RoutingConfig routingConfig;
+    private final ClientFactory clientFactory;
 
     public ParallelTargetRouting(
             RoutingConfig routingConfig,
             MetricRegistry metricRegistry,
             ClientFactory clientFactory
     ) throws IOException {
+        this.routingConfig = routingConfig;
+        this.clientFactory = clientFactory;
+
         this.totalRecords = metricRegistry.counter(name(ParallelTargetRouting.class, "totalRecords"));
         this.totalBytes = metricRegistry.counter(name(ParallelTargetRouting.class, "totalBytes"));
 
+    }
+
+    private Map<String, Client> createClients() {
+        Map<String, Client> outputs = new HashMap<>();
         Map<String, TargetConfig> configMap = routingConfig.getTargetConfigMap();
+
         for (Map.Entry<String, TargetConfig> entry : configMap.entrySet()) {
             String targetName = entry.getKey();
             TargetConfig targetConfig = entry.getValue();
@@ -83,43 +97,41 @@ public class ParallelTargetRouting implements TargetRouting {
                 String hostname = targetConfig.getTarget();
                 int port = Integer.parseInt(targetConfig.getPort());
                 int connectionTimeout = routingConfig.getConnectionTimeout();
-
+                // FIXME blocked ~ you ran it in the constructor not in the method
                 InetSocketAddress isa = new InetSocketAddress(hostname, port);
                 // TODO count connectLatency
                 try {
-                    byte[] OFFER = ("\nrelp_version=0\nrelp_software=cfe_35\ncommands=" + "syslog" + "\n")
-                            .getBytes(StandardCharsets.US_ASCII);
+                    LOGGER.info("opening client to isa <[{}]>", isa);
                     Client client = clientFactory.open(isa, connectionTimeout, TimeUnit.MILLISECONDS);
-                    CompletableFuture<RelpFrame> openFuture = client.transmit("open", OFFER);
+
+                    String offer = ("\nrelp_version=0\nrelp_software=cfe_35\ncommands=" + "syslog" + "\n");
+                    LOGGER.info("transmitting offer <{}>", offer);
+                    CompletableFuture<RelpFrame> openFuture = client
+                            .transmit("open", offer.getBytes(StandardCharsets.US_ASCII));
+
+                    LOGGER.info("waiting offer reply");
                     RelpFrame openResponse = openFuture.get();
+                    LOGGER.info("got openResponse <[{}]>", openResponse);
                     if (!openResponse.payload().toString().startsWith("200 OK")) {
                         throw new IllegalStateException("open response for client not 200 OK");
                     }
-                    this.outputMap.put(targetName, client);
+                    outputs.put(targetName, client);
+                    LOGGER.info("created client for isa <[{}]>", isa);
                 }
-                catch (InterruptedException | ExecutionException | TimeoutException e) {
+                catch (InterruptedException | ExecutionException | TimeoutException | IOException e) {
+                    // TODO what about these?
                     throw new RuntimeException(e);
                 }
-
-                /*
-                Output output = new Output(
-                        targetName,
-                        targetConfig.getTarget(),
-                        Integer.parseInt(targetConfig.getPort()),
-                        routingConfig.getConnectionTimeout(),
-                        routingConfig.getReadTimeout(),
-                        routingConfig.getWriteTimeout(),
-                        routingConfig.getReconnectInterval(),
-                        metricRegistry
-                );
-                
-                 */
-
             }
         }
+        return outputs;
     }
 
-    public List<CompletableFuture<RelpFrame>> route(final RoutingData routingData) {
+    public List<CompletableFuture<RelpFrame>> route(RoutingData routingData) {
+        if (outputMap.isEmpty()) {
+            outputMap.putAll(createClients());
+        }
+
         List<CompletableFuture<RelpFrame>> outputReplyFutures = new ArrayList<>(outputMap.size());
 
         for (String target : routingData.targets) {
@@ -134,6 +146,7 @@ public class ParallelTargetRouting implements TargetRouting {
             totalRecords.inc();
             totalBytes.inc(routingData.payload.length);
         }
+        LOGGER.info("returning outputReplyFutures.size() <{}>", outputReplyFutures.size());
         return outputReplyFutures;
     }
 

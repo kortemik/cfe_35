@@ -53,6 +53,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.channels.UnresolvedAddressException;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
 
@@ -178,6 +179,7 @@ public class Output implements Consumer<byte[]>, AutoCloseable {
                     allSent = true;
                 }
             }
+            LOGGER.info("sent successfully syslogMessage <[{}]>", new String(syslogMessage, StandardCharsets.UTF_8));
         }
     }
 
