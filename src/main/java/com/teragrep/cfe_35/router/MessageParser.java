@@ -62,6 +62,7 @@ import org.slf4j.LoggerFactory;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -132,6 +133,8 @@ public class MessageParser extends RelpEvent {
     public void accept(FrameContext frameContext) {
         transportInfo = frameContext.establishedContext().socket().getTransportInfo();
         byte[] payload = frameContext.relpFrame().payload().toBytes();
+
+        List<CompletableFuture<RelpFrame>> transmitted = new ArrayList<>();
         try (final Timer.Context context = responseLatency.time()) {
             // increment counters
             bytes.inc(payload.length);
@@ -154,38 +157,10 @@ public class MessageParser extends RelpEvent {
                     }
                 }
 
-                List<CompletableFuture<RelpFrame>> transmitted = targetRouting.route(routingData);
+                LOGGER.debug("about to route");
+                transmitted.addAll(targetRouting.route(routingData));
+                LOGGER.debug("routed");
 
-                /*
-                CompletableFuture<String> sad = new CompletableFuture<>();
-                CompletableFuture<String> das = new CompletableFuture<>();
-                
-                List<CompletableFuture<String>> lost = new LinkedList<>();
-                
-                lost.add(sad);
-                lost.add(das);
-                
-                CompletableFuture<String>[] completableFutures = new CompletableFuture[0];
-                
-                CompletableFuture.allOf(lost.toArray(completableFutures)).thenRun()
-                 */
-                CompletableFuture<RelpFrame>[] completableFuturesArrayTemplate = new CompletableFuture[0];
-
-                CompletableFuture<RelpFrame>[] completableFutures = transmitted
-                        .toArray(completableFuturesArrayTemplate);
-
-                // TODO create error handler, that re-creates the client when error occurs
-
-                CompletableFuture.allOf(completableFutures).thenRun(() -> {
-                    LOGGER.debug("all transmitted.size() <{}> futures completed successfully", transmitted.size());
-                    // respond that it was processed ok
-                    String replyOk = "200 OK";
-                    int txn = frameContext.relpFrame().txn().toInt();
-                    RelpFrameTX relpFrameTX = new RelpFrameTX("rsp", replyOk.getBytes(StandardCharsets.UTF_8));
-                    relpFrameTX.setTransactionNumber(txn);
-                    frameContext.establishedContext().relpWrite().accept(Collections.singletonList(relpFrameTX));
-                    LOGGER.debug("replyOk <{}> for txn <{}>", replyOk, txn);
-                });
             }
         }
         catch (Exception e) {
@@ -194,8 +169,26 @@ public class MessageParser extends RelpEvent {
                             "route to <inspection> because exception while handling data from <{}>:<{}>",
                             transportInfo.getPeerAddress(), transportInfo.getPeerPort(), e
                     );
-            targetRouting.route(new RoutingData(payload, Collections.singleton(inspection.name)));
+            transmitted.addAll(targetRouting.route(new RoutingData(payload, Collections.singleton(inspection.name))));
         }
+
+        CompletableFuture<RelpFrame>[] completableFuturesArrayTemplate = new CompletableFuture[0];
+
+        CompletableFuture<RelpFrame>[] completableFutures = transmitted.toArray(completableFuturesArrayTemplate);
+
+        // TODO create error handler, that re-creates the client when error occurs
+
+        CompletableFuture.allOf(completableFutures).thenRun(() -> {
+            LOGGER.debug("all transmitted.size() <{}> futures completed successfully", transmitted.size());
+            // respond that it was processed ok
+            String replyOk = "200 OK";
+            int txn = frameContext.relpFrame().txn().toInt();
+            RelpFrameTX relpFrameTX = new RelpFrameTX("rsp", replyOk.getBytes(StandardCharsets.UTF_8));
+            relpFrameTX.setTransactionNumber(txn);
+            frameContext.establishedContext().relpWrite().accept(Collections.singletonList(relpFrameTX));
+            LOGGER.debug("replyOk <{}> for txn <{}>", replyOk, txn);
+        });
+
     }
 
     @Override
