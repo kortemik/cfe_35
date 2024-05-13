@@ -53,6 +53,7 @@ import com.teragrep.rlp_03.channel.socket.PlainFactory;
 import com.teragrep.rlp_03.client.ClientFactory;
 import com.teragrep.rlp_03.eventloop.EventLoop;
 import com.teragrep.rlp_03.eventloop.EventLoopFactory;
+import com.teragrep.rlp_03.frame.RelpFrame;
 import com.teragrep.rlp_03.frame.delegate.DefaultFrameDelegate;
 import com.teragrep.rlp_03.frame.delegate.FrameContext;
 import com.teragrep.rlp_03.server.ServerFactory;
@@ -66,6 +67,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
@@ -81,8 +84,19 @@ public class TargetRoutingTest {
 
     private final MetricRegistry metricRegistry = new MetricRegistry();
 
+    private EventLoop eventLoop;
+    private ExecutorService executorService;
+
     @BeforeAll
     public void setupTargets() throws IOException {
+
+        EventLoopFactory eventLoopFactory = new EventLoopFactory();
+        eventLoop = eventLoopFactory.create(); // FIXME this is not cleaned up
+        Thread eventLoopThread = new Thread(eventLoop);
+        eventLoopThread.start(); // FIXME this is not cleaned up
+
+        executorService = Executors.newSingleThreadExecutor(); // FIXME this is not cleaned up
+
         setup(2601, spoolList);
         setup(2602, inspectionList);
         setup(2603, siem0List);
@@ -93,13 +107,6 @@ public class TargetRoutingTest {
     private void setup(int port, List<byte[]> recordList) throws IOException {
         Consumer<FrameContext> cbFunction = relpFrameServerRX -> recordList
                 .add(relpFrameServerRX.relpFrame().payload().toBytes());
-
-        EventLoopFactory eventLoopFactory = new EventLoopFactory();
-        EventLoop eventLoop = eventLoopFactory.create(); // FIXME this is not cleaned up
-        Thread eventLoopThread = new Thread(eventLoop);
-        eventLoopThread.start(); // FIXME this is not cleaned up
-
-        ExecutorService executorService = Executors.newSingleThreadExecutor(); // FIXME this is not cleaned up
 
         ServerFactory serverFactory = new ServerFactory(
                 eventLoop,
@@ -114,11 +121,6 @@ public class TargetRoutingTest {
     public void testSpool() throws IOException {
         System.setProperty("routingTargetsConfig", "src/test/resources/targets.json");
 
-        EventLoopFactory eventLoopFactory = new EventLoopFactory();
-        EventLoop eventLoop = eventLoopFactory.create(); // FIXME this is not cleaned up
-        Thread eventLoopThread = new Thread(eventLoop);
-        eventLoopThread.start(); // FIXME this is not cleaned up
-
         ExecutorService executorService = Executors.newFixedThreadPool(4); // FIXME this is not cleaned up
 
         ConnectContextFactory connectContextFactory = new ConnectContextFactory(executorService, new PlainFactory());
@@ -132,8 +134,17 @@ public class TargetRoutingTest {
                         clientFactory
                 )
         ) {
-            targetRouting
+            List<CompletableFuture<RelpFrame>> futures = targetRouting
                     .route(new RoutingData("test1".getBytes(StandardCharsets.UTF_8), Collections.singleton("spool")));
+
+            CompletableFuture<RelpFrame>[] completableFuturesArrayTemplate = new CompletableFuture[0];
+
+            CompletableFuture<RelpFrame>[] completableFutures = futures.toArray(completableFuturesArrayTemplate);
+
+            CompletableFuture.allOf(completableFutures).get();
+        }
+        catch (ExecutionException | InterruptedException e) {
+            throw new RuntimeException(e);
         }
 
         Assertions.assertEquals("test1", new String(spoolList.get(0), StandardCharsets.UTF_8));
@@ -144,13 +155,6 @@ public class TargetRoutingTest {
     @Test
     public void testFailed() throws IOException {
         System.setProperty("routingTargetsConfig", "src/test/resources/targets.json");
-
-        EventLoopFactory eventLoopFactory = new EventLoopFactory();
-        EventLoop eventLoop = eventLoopFactory.create(); // FIXME this is not cleaned up
-        Thread eventLoopThread = new Thread(eventLoop);
-        eventLoopThread.start(); // FIXME this is not cleaned up
-
-        ExecutorService executorService = Executors.newFixedThreadPool(4); // FIXME this is not cleaned up
 
         ConnectContextFactory connectContextFactory = new ConnectContextFactory(executorService, new PlainFactory());
         ClientFactory clientFactory = new ClientFactory(connectContextFactory, eventLoop);
@@ -174,13 +178,6 @@ public class TargetRoutingTest {
     @Test
     public void testInspection() throws IOException {
         System.setProperty("routingTargetsConfig", "src/test/resources/targets.json");
-
-        EventLoopFactory eventLoopFactory = new EventLoopFactory();
-        EventLoop eventLoop = eventLoopFactory.create(); // FIXME this is not cleaned up
-        Thread eventLoopThread = new Thread(eventLoop);
-        eventLoopThread.start(); // FIXME this is not cleaned up
-
-        ExecutorService executorService = Executors.newFixedThreadPool(4); // FIXME this is not cleaned up
 
         ConnectContextFactory connectContextFactory = new ConnectContextFactory(executorService, new PlainFactory());
         ClientFactory clientFactory = new ClientFactory(connectContextFactory, eventLoop);
@@ -206,13 +203,6 @@ public class TargetRoutingTest {
     public void testSiem0() throws IOException {
         System.setProperty("routingTargetsConfig", "src/test/resources/targets.json");
 
-        EventLoopFactory eventLoopFactory = new EventLoopFactory();
-        EventLoop eventLoop = eventLoopFactory.create(); // FIXME this is not cleaned up
-        Thread eventLoopThread = new Thread(eventLoop);
-        eventLoopThread.start(); // FIXME this is not cleaned up
-
-        ExecutorService executorService = Executors.newFixedThreadPool(4); // FIXME this is not cleaned up
-
         ConnectContextFactory connectContextFactory = new ConnectContextFactory(executorService, new PlainFactory());
         ClientFactory clientFactory = new ClientFactory(connectContextFactory, eventLoop);
 
@@ -225,8 +215,17 @@ public class TargetRoutingTest {
                         clientFactory
                 )
         ) {
-            targetRouting
+            List<CompletableFuture<RelpFrame>> futures = targetRouting
                     .route(new RoutingData("test4".getBytes(StandardCharsets.UTF_8), Collections.singleton("siem0")));
+
+            CompletableFuture<RelpFrame>[] completableFuturesArrayTemplate = new CompletableFuture[0];
+
+            CompletableFuture<RelpFrame>[] completableFutures = futures.toArray(completableFuturesArrayTemplate);
+
+            CompletableFuture.allOf(completableFutures).get();
+        }
+        catch (ExecutionException | InterruptedException e) {
+            throw new RuntimeException(e);
         }
 
         Assertions.assertEquals("test4", new String(siem0List.get(0), StandardCharsets.UTF_8));
@@ -237,13 +236,6 @@ public class TargetRoutingTest {
     public void testHDFS() throws IOException {
         System.setProperty("routingTargetsConfig", "src/test/resources/targets.json");
 
-        EventLoopFactory eventLoopFactory = new EventLoopFactory();
-        EventLoop eventLoop = eventLoopFactory.create(); // FIXME this is not cleaned up
-        Thread eventLoopThread = new Thread(eventLoop);
-        eventLoopThread.start(); // FIXME this is not cleaned up
-
-        ExecutorService executorService = Executors.newFixedThreadPool(4); // FIXME this is not cleaned up
-
         ConnectContextFactory connectContextFactory = new ConnectContextFactory(executorService, new PlainFactory());
         ClientFactory clientFactory = new ClientFactory(connectContextFactory, eventLoop);
 
@@ -255,8 +247,17 @@ public class TargetRoutingTest {
                         clientFactory
                 )
         ) {
-            targetRouting
+            List<CompletableFuture<RelpFrame>> futures = targetRouting
                     .route(new RoutingData("test5".getBytes(StandardCharsets.UTF_8), Collections.singleton("hdfs")));
+
+            CompletableFuture<RelpFrame>[] completableFuturesArrayTemplate = new CompletableFuture[0];
+
+            CompletableFuture<RelpFrame>[] completableFutures = futures.toArray(completableFuturesArrayTemplate);
+
+            CompletableFuture.allOf(completableFutures).get();
+        }
+        catch (ExecutionException | InterruptedException e) {
+            throw new RuntimeException(e);
         }
 
         Assertions.assertEquals("test5", new String(hdfsList.get(0), StandardCharsets.UTF_8));
@@ -267,13 +268,6 @@ public class TargetRoutingTest {
     public void testDeadLetter() throws IOException {
         System.setProperty("routingTargetsConfig", "src/test/resources/targets.json");
 
-        EventLoopFactory eventLoopFactory = new EventLoopFactory();
-        EventLoop eventLoop = eventLoopFactory.create(); // FIXME this is not cleaned up
-        Thread eventLoopThread = new Thread(eventLoop);
-        eventLoopThread.start(); // FIXME this is not cleaned up
-
-        ExecutorService executorService = Executors.newFixedThreadPool(4); // FIXME this is not cleaned up
-
         ConnectContextFactory connectContextFactory = new ConnectContextFactory(executorService, new PlainFactory());
         ClientFactory clientFactory = new ClientFactory(connectContextFactory, eventLoop);
 
@@ -285,8 +279,17 @@ public class TargetRoutingTest {
                         clientFactory
                 )
         ) {
-            targetRouting
+            List<CompletableFuture<RelpFrame>> futures = targetRouting
                     .route(new RoutingData("test6".getBytes(StandardCharsets.UTF_8), Collections.singleton("dead-letter")));
+
+            CompletableFuture<RelpFrame>[] completableFuturesArrayTemplate = new CompletableFuture[0];
+
+            CompletableFuture<RelpFrame>[] completableFutures = futures.toArray(completableFuturesArrayTemplate);
+
+            CompletableFuture.allOf(completableFutures).get();
+        }
+        catch (ExecutionException | InterruptedException e) {
+            throw new RuntimeException(e);
         }
 
         Assertions.assertEquals("test6", new String(deadLetterList.get(0), StandardCharsets.UTF_8));

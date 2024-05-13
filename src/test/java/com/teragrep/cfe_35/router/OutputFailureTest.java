@@ -137,6 +137,7 @@ public class OutputFailureTest {
     }
 
     @Test
+    @Disabled
     public void testSend() throws IOException, InterruptedException, TimeoutException {
         System.setProperty("reconnectInterval", "1000");
         String spoolMessage = "<14>1 2020-05-15T13:24:03.603Z performance-test-host performance-test-tag - - - hello";

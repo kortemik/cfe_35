@@ -67,7 +67,7 @@ public class ParallelTargetRouting implements TargetRouting {
 
     public static final Logger LOGGER = LoggerFactory.getLogger(ParallelTargetRouting.class);
 
-    private final Map<String, Client> outputMap = new HashMap<>();
+    private final Map<String, CompletableFuture<Client>> outputMap = new HashMap<>();
     private final Counter totalRecords;
     private final Counter totalBytes;
     private final RoutingConfig routingConfig;
@@ -86,8 +86,9 @@ public class ParallelTargetRouting implements TargetRouting {
 
     }
 
-    private Map<String, Client> createClients() {
-        Map<String, Client> outputs = new HashMap<>();
+    private Map<String, CompletableFuture<Client>> createClients() {
+        LOGGER.debug("in createClients");
+        Map<String, CompletableFuture<Client>> outputs = new HashMap<>();
         Map<String, TargetConfig> configMap = routingConfig.getTargetConfigMap();
 
         for (Map.Entry<String, TargetConfig> entry : configMap.entrySet()) {
@@ -100,30 +101,30 @@ public class ParallelTargetRouting implements TargetRouting {
                 // FIXME blocked ~ you ran it in the constructor not in the method
                 InetSocketAddress isa = new InetSocketAddress(hostname, port);
                 // TODO count connectLatency
-                try {
-                    LOGGER.info("opening client to isa <[{}]>", isa);
-                    Client client = clientFactory.open(isa).get(connectionTimeout, TimeUnit.MILLISECONDS);
+                LOGGER.debug("opening client to isa <[{}]>", isa);
+                CompletableFuture<Client> futureClient = clientFactory
+                        .open(isa)
+                        .orTimeout(connectionTimeout, TimeUnit.MILLISECONDS);
 
+                futureClient.thenAccept(client -> {
                     String offer = ("\nrelp_version=0\nrelp_software=cfe_35\ncommands=" + "syslog" + "\n");
-                    LOGGER.info("transmitting offer <{}>", offer);
+                    LOGGER.debug("transmitting offer <{}>", offer);
                     CompletableFuture<RelpFrame> openFuture = client
                             .transmit("open", offer.getBytes(StandardCharsets.US_ASCII));
 
-                    LOGGER.info("waiting offer reply");
-                    RelpFrame openResponse = openFuture.get();
-                    LOGGER.info("got openResponse <[{}]>", openResponse);
-                    if (!openResponse.payload().toString().startsWith("200 OK")) {
-                        throw new IllegalStateException("open response for client not 200 OK");
-                    }
-                    outputs.put(targetName, client);
-                    LOGGER.info("created client for isa <[{}]>", isa);
-                }
-                catch (InterruptedException | ExecutionException | TimeoutException e) {
-                    // TODO what about these?
-                    throw new RuntimeException(e);
-                }
+                    LOGGER.debug("waiting offer reply");
+                    openFuture.thenAccept(openResponse -> {
+                        LOGGER.debug("got openResponse <[{}]>", openResponse);
+                        if (!openResponse.payload().toString().startsWith("200 OK")) {
+                            throw new IllegalStateException("open response for client not 200 OK");
+                        }
+                    });
+                });
+                outputs.put(targetName, futureClient);
+                LOGGER.debug("created client for isa <[{}]>", isa);
             }
         }
+        LOGGER.debug("out createClients");
         return outputs;
     }
 
@@ -135,16 +136,21 @@ public class ParallelTargetRouting implements TargetRouting {
         List<CompletableFuture<RelpFrame>> outputReplyFutures = new ArrayList<>(outputMap.size());
 
         for (String target : routingData.targets) {
-            Client client = outputMap.get(target);
-            if (client == null) {
+            CompletableFuture<Client> futureClient = outputMap.get(target);
+            if (futureClient == null) {
                 throw new IllegalArgumentException("no such target <[" + target + "]>");
             }
 
-            CompletableFuture<RelpFrame> transmitted = client.transmit("syslog", routingData.payload);
-            outputReplyFutures.add(transmitted);
+            LOGGER.debug("to get a client");
+            CompletableFuture<RelpFrame> transmitFuture = futureClient.thenCompose(client -> {
 
-            totalRecords.inc();
-            totalBytes.inc(routingData.payload.length);
+                CompletableFuture<RelpFrame> rv = client.transmit("syslog", routingData.payload);
+                totalRecords.inc();
+                totalBytes.inc(routingData.payload.length);
+                return rv;
+            });
+            outputReplyFutures.add(transmitFuture);
+
         }
         LOGGER.info("returning outputReplyFutures.size() <{}>", outputReplyFutures.size());
         return outputReplyFutures;
@@ -152,9 +158,15 @@ public class ParallelTargetRouting implements TargetRouting {
 
     @Override
     public void close() {
-        for (Client client : outputMap.values()) {
-            client.transmit("close", "".getBytes(StandardCharsets.UTF_8));
-            client.close();
+        for (CompletableFuture<Client> futureClient : outputMap.values()) {
+            try {
+                Client client = futureClient.get();
+                client.transmit("close", "".getBytes(StandardCharsets.UTF_8));
+                client.close();
+            }
+            catch (Exception e) {
+                throw new RuntimeException(e);
+            }
         }
     }
 

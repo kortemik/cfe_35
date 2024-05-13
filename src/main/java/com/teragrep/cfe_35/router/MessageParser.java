@@ -177,14 +177,14 @@ public class MessageParser implements Consumer<FrameContext>, AutoCloseable {
                 // TODO create error handler, that re-creates the client when error occurs
 
                 CompletableFuture.allOf(completableFutures).thenRun(() -> {
-                    LOGGER.info("all transmitted.size() <{}> futures completed successfully", transmitted.size());
+                    LOGGER.debug("all transmitted.size() <{}> futures completed successfully", transmitted.size());
                     // respond that it was processed ok
                     String replyOk = "200 OK";
                     int txn = frameContext.relpFrame().txn().toInt();
                     RelpFrameTX relpFrameTX = new RelpFrameTX("rsp", replyOk.getBytes(StandardCharsets.UTF_8));
                     relpFrameTX.setTransactionNumber(txn);
                     frameContext.establishedContext().relpWrite().accept(Collections.singletonList(relpFrameTX));
-                    LOGGER.info("replyOk <{}> for txn <{}>", replyOk, txn);
+                    LOGGER.debug("replyOk <{}> for txn <{}>", replyOk, txn);
                 });
             }
         }
@@ -201,7 +201,7 @@ public class MessageParser implements Consumer<FrameContext>, AutoCloseable {
     @Override
     public void close() {
         if (transportInfo != null) {
-            LOGGER.info("closing connection for <{}:{}>", transportInfo.getPeerAddress(), transportInfo.getPeerPort());
+            LOGGER.debug("closing connection for <{}:{}>", transportInfo.getPeerAddress(), transportInfo.getPeerPort());
         }
         targetRouting.close();
         this.connections.dec();

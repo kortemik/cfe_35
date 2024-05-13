@@ -70,6 +70,7 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@TestMethodOrder(MethodOrderer.MethodName.class)
 public class MessageParserTest {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(MessageParserTest.class);
@@ -86,8 +87,18 @@ public class MessageParserTest {
 
     private final int port = 3600;
 
+    private EventLoop eventLoop;
+    private ExecutorService executorService;
+
     @BeforeAll
     public void setupTargets() throws IOException {
+
+        EventLoopFactory eventLoopFactory = new EventLoopFactory();
+        eventLoop = eventLoopFactory.create(); // FIXME this is not cleaned up
+        Thread eventLoopThread = new Thread(eventLoop);
+        eventLoopThread.start(); // FIXME this is not cleaned up
+
+        executorService = Executors.newSingleThreadExecutor(); // FIXME this is not cleaned up
 
         setup(3601, spoolList, "spool");
         setup(3602, inspectionList, "inspection");
@@ -105,6 +116,7 @@ public class MessageParserTest {
         siem0List.clear();
         hdfsList.clear();
         deadLetterList.clear();
+        LOGGER.info("cleared");
     }
 
     private void setup(int port, ConcurrentLinkedQueue<byte[]> recordList, String name) throws IOException {
@@ -117,13 +129,16 @@ public class MessageParserTest {
             //LOGGER.info("name recordList.size() <{}>", recordList.size());
         };
 
+        /*
         EventLoopFactory eventLoopFactory = new EventLoopFactory();
         EventLoop eventLoop = eventLoopFactory.create(); // FIXME this is not cleaned up
         Thread eventLoopThread = new Thread(eventLoop, "T-" + name + "-eventLoop");
         eventLoopThread.start(); // FIXME this is not cleaned up
-
+        
         ExecutorService executorService = Executors
                 .newSingleThreadExecutor(runnable -> new Thread(runnable, "T-" + name + "-runner"));
+        
+         */
         ServerFactory serverFactory = new ServerFactory(
                 eventLoop,
                 executorService,
@@ -144,14 +159,17 @@ public class MessageParserTest {
         RoutingConfig routingConfig = new RoutingConfig();
         RoutingLookup routingLookup = new RoutingLookup(routingConfig);
 
+        /*
         EventLoopFactory eventLoopFactory = new EventLoopFactory();
         EventLoop eventLoop = eventLoopFactory.create(); // FIXME this is not cleaned up
         Thread eventLoopThread = new Thread(eventLoop, "S-eventLoop");
         eventLoopThread.start(); // FIXME this is not cleaned up
-
+        
         ExecutorService executorService = Executors
                 .newCachedThreadPool(runnable -> new Thread(runnable, "T-" + "server" + "-runner")); // FIXME this is not cleaned up
-
+        
+        
+         */
         ConnectContextFactory connectContextFactory = new ConnectContextFactory(executorService, new PlainFactory());
         ClientFactory clientFactory = new ClientFactory(connectContextFactory, eventLoop);
 
