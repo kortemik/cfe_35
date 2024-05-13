@@ -172,6 +172,10 @@ public class MessageParser extends RelpEvent {
             transmitted.addAll(targetRouting.route(new RoutingData(payload, Collections.singleton(inspection.name))));
         }
 
+        if (transmitted.isEmpty()) {
+            throw new IllegalStateException("no routing target futures were found");
+        }
+
         CompletableFuture<RelpFrame>[] completableFuturesArrayTemplate = new CompletableFuture[0];
 
         CompletableFuture<RelpFrame>[] completableFutures = transmitted.toArray(completableFuturesArrayTemplate);
