@@ -152,7 +152,7 @@ public class ParallelTargetRouting implements TargetRouting {
             outputReplyFutures.add(transmitFuture);
 
         }
-        LOGGER.info("returning outputReplyFutures.size() <{}>", outputReplyFutures.size());
+        LOGGER.debug("returning outputReplyFutures.size() <{}>", outputReplyFutures.size());
         return outputReplyFutures;
     }
 
