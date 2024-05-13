@@ -51,7 +51,6 @@ import com.teragrep.rlp_03.client.ClientStub;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -65,7 +64,7 @@ public class ClientPool implements AutoCloseable {
     private final InetSocketAddress inetAddress;
     private final long connectionTimeout;
     private final int maximumPoolSize;
-    private final BlockingQueue<Client> clients;
+    private final BlockingQueue<CompletableFuture<Client>> clients;
 
     private final AtomicLong currentPoolSize;
 
@@ -96,7 +95,7 @@ public class ClientPool implements AutoCloseable {
             InetSocketAddress inetSocketAddress,
             long connectionTimeout,
             int maximumPoolSize,
-            BlockingQueue<Client> clients,
+            BlockingQueue<CompletableFuture<Client>> clients,
             AtomicLong currentPoolSize,
             AtomicBoolean close,
             ClientStub clientStub
@@ -111,28 +110,17 @@ public class ClientPool implements AutoCloseable {
         this.clientStub = clientStub;
     }
 
-    Client take() throws InterruptedException {
-        Client client;
+    CompletableFuture<Client> take() throws InterruptedException {
+        CompletableFuture<Client> client = new CompletableFuture<>();
         if (close.get()) {
-            client = clientStub;
+            client.complete(clientStub);
         }
         else {
             long poolSize = currentPoolSize.get();
             if (poolSize < maximumPoolSize) {
                 if (currentPoolSize.compareAndSet(poolSize, poolSize + 1)) {
-                    boolean created = false;
-                    while (!created) {
-                        try {
-                            Client newClient = clientFactory
-                                    .open(inetAddress, connectionTimeout, TimeUnit.MILLISECONDS);
-                            clients.put(newClient);
-                            created = true;
-                        }
-                        catch (IOException | ExecutionException | TimeoutException e) {
-                            LOGGER.warn("Exception while creating a new Client", e);
-                        }
-                    }
-
+                    CompletableFuture<Client> newClient = clientFactory.open(inetAddress);
+                    clients.put(newClient);
                 }
             }
             client = clients.take();
@@ -145,7 +133,9 @@ public class ClientPool implements AutoCloseable {
             client.close();
         }
         else {
-            clients.put(client);
+            CompletableFuture<Client> clientCompletableFuture = new CompletableFuture<>();
+            clientCompletableFuture.complete(client);
+            clients.put(clientCompletableFuture);
         }
     }
 
@@ -153,10 +143,18 @@ public class ClientPool implements AutoCloseable {
     public void close() {
         close.set(true);
 
-        Client client = clients.poll();
-        while (client != null) {
-            client.close();
-            client = clients.poll();
+        CompletableFuture<Client> clientCompletableFuture = clients.poll();
+        while (clientCompletableFuture != null) {
+
+            clientCompletableFuture.whenComplete((client, throwable) -> {
+                if (client != null) {
+                    client.close();
+                }
+                else if (throwable != null) {
+                    LOGGER.warn("Exception while closing a Client", throwable);
+                }
+            });
+            clientCompletableFuture = clients.poll();
         }
     }
 }

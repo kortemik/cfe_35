@@ -102,7 +102,7 @@ public class ParallelTargetRouting implements TargetRouting {
                 // TODO count connectLatency
                 try {
                     LOGGER.info("opening client to isa <[{}]>", isa);
-                    Client client = clientFactory.open(isa, connectionTimeout, TimeUnit.MILLISECONDS);
+                    Client client = clientFactory.open(isa).get(connectionTimeout, TimeUnit.MILLISECONDS);
 
                     String offer = ("\nrelp_version=0\nrelp_software=cfe_35\ncommands=" + "syslog" + "\n");
                     LOGGER.info("transmitting offer <{}>", offer);
@@ -118,7 +118,7 @@ public class ParallelTargetRouting implements TargetRouting {
                     outputs.put(targetName, client);
                     LOGGER.info("created client for isa <[{}]>", isa);
                 }
-                catch (InterruptedException | ExecutionException | TimeoutException | IOException e) {
+                catch (InterruptedException | ExecutionException | TimeoutException e) {
                     // TODO what about these?
                     throw new RuntimeException(e);
                 }
