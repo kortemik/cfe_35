@@ -191,8 +191,17 @@ public class TargetRoutingTest {
                         clientFactory
                 )
         ) {
-            targetRouting
+            List<CompletableFuture<RelpFrame>> futures = targetRouting
                     .route(new RoutingData("test3".getBytes(StandardCharsets.UTF_8), Collections.singleton("inspection")));
+
+            CompletableFuture<RelpFrame>[] completableFuturesArrayTemplate = new CompletableFuture[0];
+
+            CompletableFuture<RelpFrame>[] completableFutures = futures.toArray(completableFuturesArrayTemplate);
+
+            CompletableFuture.allOf(completableFutures).get();
+        }
+        catch (ExecutionException | InterruptedException e) {
+            throw new RuntimeException(e);
         }
 
         Assertions.assertEquals("test3", new String(inspectionList.get(0), StandardCharsets.UTF_8));
