@@ -55,6 +55,7 @@ import com.teragrep.rlp_01.RelpFrameTX;
 import com.teragrep.rlp_03.channel.socket.TransportInfo;
 import com.teragrep.rlp_03.frame.RelpFrame;
 import com.teragrep.rlp_03.frame.delegate.FrameContext;
+import com.teragrep.rlp_03.frame.delegate.event.RelpEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -64,11 +65,10 @@ import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.function.Consumer;
 
 import static com.codahale.metrics.MetricRegistry.name;
 
-public class MessageParser implements Consumer<FrameContext>, AutoCloseable {
+public class MessageParser extends RelpEvent {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(MessageParser.class);
     private final TargetRouting targetRouting;

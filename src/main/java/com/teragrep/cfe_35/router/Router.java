@@ -49,6 +49,7 @@ import com.codahale.metrics.MetricRegistry;
 import com.codahale.metrics.Slf4jReporter;
 import com.codahale.metrics.jmx.JmxReporter;
 import com.teragrep.cfe_35.config.RoutingConfig;
+import com.teragrep.rlp_01.RelpCommand;
 import com.teragrep.rlp_03.eventloop.EventLoop;
 import com.teragrep.rlp_03.eventloop.EventLoopFactory;
 import com.teragrep.rlp_03.channel.context.ConnectContextFactory;
@@ -56,6 +57,9 @@ import com.teragrep.rlp_03.channel.socket.PlainFactory;
 import com.teragrep.rlp_03.client.ClientFactory;
 import com.teragrep.rlp_03.frame.delegate.DefaultFrameDelegate;
 import com.teragrep.rlp_03.frame.delegate.FrameDelegate;
+import com.teragrep.rlp_03.frame.delegate.event.RelpEvent;
+import com.teragrep.rlp_03.frame.delegate.event.RelpEventClose;
+import com.teragrep.rlp_03.frame.delegate.event.RelpEventOpen;
 import com.teragrep.rlp_03.server.ServerFactory;
 import io.prometheus.client.CollectorRegistry;
 import io.prometheus.client.dropwizard.DropwizardExports;
@@ -67,6 +71,8 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -159,7 +165,15 @@ public class Router implements AutoCloseable {
                     this.metricRegistry,
                     routingConfig
             );
-            return new DefaultFrameDelegate(messageParser);
+
+            Map<String, RelpEvent> relpCommandConsumerMap = new HashMap<>();
+            relpCommandConsumerMap.put(RelpCommand.CLOSE, new RelpEventClose());
+            relpCommandConsumerMap.put(RelpCommand.OPEN, new RelpEventOpen());
+
+            // messageParser creates replies, can not use RelpEventSyslog
+            relpCommandConsumerMap.put(RelpCommand.SYSLOG, messageParser);
+
+            return new DefaultFrameDelegate(relpCommandConsumerMap);
         };
         return routingInstanceSupplier;
     }
