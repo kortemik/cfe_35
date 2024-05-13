@@ -87,26 +87,23 @@ public class MessageParserTest {
 
     private final int port = 3600;
 
-    private EventLoop eventLoop;
-    private ExecutorService executorService;
-
     @BeforeAll
     public void setupTargets() throws IOException {
 
         EventLoopFactory eventLoopFactory = new EventLoopFactory();
-        eventLoop = eventLoopFactory.create(); // FIXME this is not cleaned up
+        EventLoop eventLoop = eventLoopFactory.create(); // FIXME this is not cleaned up
         Thread eventLoopThread = new Thread(eventLoop);
         eventLoopThread.start(); // FIXME this is not cleaned up
 
-        executorService = Executors.newSingleThreadExecutor(); // FIXME this is not cleaned up
+        ExecutorService executorService = Executors.newSingleThreadExecutor(); // FIXME this is not cleaned up
 
-        setup(3601, spoolList, "spool");
-        setup(3602, inspectionList, "inspection");
-        setup(3603, siem0List, "siem0");
-        setup(3604, hdfsList, "hdfs");
-        setup(3605, deadLetterList, "deadLetter");
+        setup(eventLoop, executorService, 3601, spoolList, "spool");
+        setup(eventLoop, executorService, 3602, inspectionList, "inspection");
+        setup(eventLoop, executorService, 3603, siem0List, "siem0");
+        setup(eventLoop, executorService, 3604, hdfsList, "hdfs");
+        setup(eventLoop, executorService, 3605, deadLetterList, "deadLetter");
 
-        setupTestServer();
+        setupTestServer(eventLoop, executorService);
     }
 
     @AfterEach
@@ -119,7 +116,13 @@ public class MessageParserTest {
         LOGGER.info("cleared");
     }
 
-    private void setup(int port, ConcurrentLinkedQueue<byte[]> recordList, String name) throws IOException {
+    private void setup(
+            EventLoop eventLoop,
+            ExecutorService executorService,
+            int port,
+            ConcurrentLinkedQueue<byte[]> recordList,
+            String name
+    ) throws IOException {
         Consumer<FrameContext> cbFunction = relpFrameServerRX -> {
 
             LOGGER.error("name <{}> got payload <[{}]>", name, relpFrameServerRX.relpFrame().payload().toString());
@@ -148,7 +151,7 @@ public class MessageParserTest {
         serverFactory.create(port);
     }
 
-    private void setupTestServer() throws IOException {
+    private void setupTestServer(EventLoop eventLoop, ExecutorService executorService) throws IOException {
         MetricRegistry metricRegistry = new MetricRegistry();
         System.setProperty("routingTargetsConfig", "src/test/resources/targetsMessageParserTest.json");
         System.setProperty("cfe07LookupPath", "src/test/resources/cfe_07");
