@@ -143,7 +143,7 @@ public class Router implements AutoCloseable {
     private Supplier<FrameDelegate> getFrameDelegateSupplier(RoutingConfig routingConfig) {
         ConnectContextFactory connectContextFactory = new ConnectContextFactory(executorService, new PlainFactory());
 
-        ClientFactory clientFactory = new ClientFactory(connectContextFactory, null);
+        ClientFactory clientFactory = new ClientFactory(connectContextFactory, eventLoop);
 
         Supplier<FrameDelegate> routingInstanceSupplier = () -> {
             TargetRouting targetRouting;
