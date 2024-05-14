@@ -108,7 +108,6 @@ public class Router implements AutoCloseable {
 
         Supplier<FrameDelegate> routingInstanceSupplier = getFrameDelegateSupplier(routingConfig);
 
-        ExecutorService executorService = Executors.newFixedThreadPool(routingConfig.getServerThreads());
         PlainFactory plainFactory = new PlainFactory();
 
         ServerFactory serverFactory = new ServerFactory(
