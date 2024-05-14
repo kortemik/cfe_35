@@ -191,8 +191,8 @@ public class MessageParser extends RelpEvent {
             relpFrameTX.setTransactionNumber(txn);
             frameContext.establishedContext().relpWrite().accept(Collections.singletonList(relpFrameTX));
             LOGGER.debug("replyOk <{}> for txn <{}>", replyOk, txn);
+            frameContext.relpFrame().close();
         });
-
     }
 
     @Override
