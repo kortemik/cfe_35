@@ -51,9 +51,9 @@ import com.teragrep.cfe_35.router.targets.DeadLetter;
 import com.teragrep.cfe_35.router.targets.Inspection;
 import com.teragrep.rlo_06.*;
 
-import com.teragrep.rlp_01.RelpFrameTX;
-import com.teragrep.rlp_03.channel.socket.TransportInfo;
+import com.teragrep.net_01.channel.socket.TransportInfo;
 import com.teragrep.rlp_03.frame.RelpFrame;
+import com.teragrep.rlp_03.frame.RelpFrameFactory;
 import com.teragrep.rlp_03.frame.delegate.FrameContext;
 import com.teragrep.rlp_03.frame.delegate.event.RelpEvent;
 import org.slf4j.Logger;
@@ -61,7 +61,6 @@ import org.slf4j.LoggerFactory;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -79,6 +78,7 @@ public class MessageParser extends RelpEvent {
     private final Counter bytes;
     private final Counter connections;
     private final RFC5424Frame rfc5424Frame;
+    private final RelpFrameFactory relpFrameFactory;
     private TransportInfo transportInfo;
 
     private final CFE07RecordFrame cfe07RecordFrame;
@@ -110,6 +110,7 @@ public class MessageParser extends RelpEvent {
         this.connections.inc();
 
         this.rfc5424Frame = new RFC5424Frame();
+        this.relpFrameFactory = new RelpFrameFactory();
 
         this.cfe07RecordFrame = new CFE07RecordFrame(routingLookup, rfc5424Frame, deadLetter, inspection);
         this.kin02RecordFrame = new KIN02RecordFrame(
@@ -185,12 +186,10 @@ public class MessageParser extends RelpEvent {
         CompletableFuture.allOf(completableFutures).thenRun(() -> {
             LOGGER.debug("all transmitted.size() <{}> futures completed successfully", transmitted.size());
             // respond that it was processed ok
-            String replyOk = "200 OK";
-            int txn = frameContext.relpFrame().txn().toInt();
-            RelpFrameTX relpFrameTX = new RelpFrameTX("rsp", replyOk.getBytes(StandardCharsets.UTF_8));
-            relpFrameTX.setTransactionNumber(txn);
-            frameContext.establishedContext().relpWrite().accept(Collections.singletonList(relpFrameTX));
-            LOGGER.debug("replyOk <{}> for txn <{}>", replyOk, txn);
+            RelpFrame responseFrame = relpFrameFactory
+                    .create(frameContext.relpFrame().txn().toBytes(), "rsp", "200 OK");
+            frameContext.establishedContext().egress().accept(responseFrame.toWriteable());
+            LOGGER.debug("responding with responseFrame <{}>", responseFrame);
             frameContext.relpFrame().close();
         });
     }

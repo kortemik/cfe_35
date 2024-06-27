@@ -50,17 +50,18 @@ import com.codahale.metrics.Slf4jReporter;
 import com.codahale.metrics.jmx.JmxReporter;
 import com.teragrep.cfe_35.config.RoutingConfig;
 import com.teragrep.rlp_01.RelpCommand;
-import com.teragrep.rlp_03.eventloop.EventLoop;
-import com.teragrep.rlp_03.eventloop.EventLoopFactory;
-import com.teragrep.rlp_03.channel.context.ConnectContextFactory;
-import com.teragrep.rlp_03.channel.socket.PlainFactory;
-import com.teragrep.rlp_03.client.ClientFactory;
+import com.teragrep.net_01.eventloop.EventLoop;
+import com.teragrep.net_01.eventloop.EventLoopFactory;
+import com.teragrep.net_01.channel.context.ConnectContextFactory;
+import com.teragrep.net_01.channel.socket.PlainFactory;
+import com.teragrep.rlp_03.client.RelpClientFactory;
+import com.teragrep.rlp_03.frame.FrameDelegationClockFactory;
 import com.teragrep.rlp_03.frame.delegate.DefaultFrameDelegate;
 import com.teragrep.rlp_03.frame.delegate.FrameDelegate;
 import com.teragrep.rlp_03.frame.delegate.event.RelpEvent;
 import com.teragrep.rlp_03.frame.delegate.event.RelpEventClose;
 import com.teragrep.rlp_03.frame.delegate.event.RelpEventOpen;
-import com.teragrep.rlp_03.server.ServerFactory;
+import com.teragrep.net_01.server.ServerFactory;
 import io.prometheus.client.CollectorRegistry;
 import io.prometheus.client.dropwizard.DropwizardExports;
 import io.prometheus.client.exporter.MetricsServlet;
@@ -110,11 +111,15 @@ public class Router implements AutoCloseable {
 
         PlainFactory plainFactory = new PlainFactory();
 
+        FrameDelegationClockFactory frameDelegationClockFactory = new FrameDelegationClockFactory(
+                routingInstanceSupplier
+        );
+
         ServerFactory serverFactory = new ServerFactory(
                 eventLoop,
                 executorService,
                 plainFactory,
-                routingInstanceSupplier
+                frameDelegationClockFactory
         );
         serverFactory.create(routingConfig.getListenPort());
 
@@ -148,7 +153,7 @@ public class Router implements AutoCloseable {
     private Supplier<FrameDelegate> getFrameDelegateSupplier(RoutingConfig routingConfig) {
         ConnectContextFactory connectContextFactory = new ConnectContextFactory(executorService, new PlainFactory());
 
-        ClientFactory clientFactory = new ClientFactory(connectContextFactory, eventLoop);
+        RelpClientFactory clientFactory = new RelpClientFactory(connectContextFactory, eventLoop);
 
         Supplier<FrameDelegate> routingInstanceSupplier = () -> {
             TargetRouting targetRouting;

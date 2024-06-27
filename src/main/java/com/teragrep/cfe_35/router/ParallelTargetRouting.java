@@ -49,15 +49,19 @@ import com.codahale.metrics.Counter;
 import com.codahale.metrics.MetricRegistry;
 import com.teragrep.cfe_35.config.RoutingConfig;
 import com.teragrep.cfe_35.config.json.TargetConfig;
-import com.teragrep.rlp_03.client.Client;
-import com.teragrep.rlp_03.client.ClientFactory;
+import com.teragrep.rlp_03.client.RelpClient;
+import com.teragrep.rlp_03.client.RelpClientFactory;
 import com.teragrep.rlp_03.frame.RelpFrame;
+import com.teragrep.rlp_03.frame.RelpFrameFactory;
+import com.teragrep.rlp_03.frame.RelpFrameImpl;
+import com.teragrep.rlp_03.frame.fragment.Fragment;
+import com.teragrep.rlp_03.frame.fragment.FragmentFactory;
+import com.teragrep.rlp_03.frame.fragment.FragmentStub;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.*;
 
@@ -67,28 +71,35 @@ public class ParallelTargetRouting implements TargetRouting {
 
     public static final Logger LOGGER = LoggerFactory.getLogger(ParallelTargetRouting.class);
 
-    private final Map<String, CompletableFuture<Client>> outputMap = new HashMap<>();
+    private final Map<String, CompletableFuture<RelpClient>> outputMap = new HashMap<>();
     private final Counter totalRecords;
     private final Counter totalBytes;
     private final RoutingConfig routingConfig;
-    private final ClientFactory clientFactory;
+    private final RelpClientFactory clientFactory;
+
+    private final RelpFrameFactory relpFrameFactory;
+    private final FragmentFactory fragmentFactory;
+    private final FragmentStub fragmentStub;
 
     public ParallelTargetRouting(
             RoutingConfig routingConfig,
             MetricRegistry metricRegistry,
-            ClientFactory clientFactory
+            RelpClientFactory clientFactory
     ) throws IOException {
         this.routingConfig = routingConfig;
         this.clientFactory = clientFactory;
+        this.relpFrameFactory = new RelpFrameFactory();
+        this.fragmentFactory = new FragmentFactory();
+        this.fragmentStub = new FragmentStub();
 
         this.totalRecords = metricRegistry.counter(name(ParallelTargetRouting.class, "totalRecords"));
         this.totalBytes = metricRegistry.counter(name(ParallelTargetRouting.class, "totalBytes"));
 
     }
 
-    private Map<String, CompletableFuture<Client>> createClients() {
+    private Map<String, CompletableFuture<RelpClient>> createClients() {
         LOGGER.debug("in createClients");
-        Map<String, CompletableFuture<Client>> outputs = new HashMap<>();
+        Map<String, CompletableFuture<RelpClient>> outputs = new HashMap<>();
         Map<String, TargetConfig> configMap = routingConfig.getTargetConfigMap();
 
         for (Map.Entry<String, TargetConfig> entry : configMap.entrySet()) {
@@ -102,15 +113,16 @@ public class ParallelTargetRouting implements TargetRouting {
                 InetSocketAddress isa = new InetSocketAddress(hostname, port);
                 // TODO count connectLatency
                 LOGGER.debug("opening client to isa <[{}]>", isa);
-                CompletableFuture<Client> futureClient = clientFactory
+                CompletableFuture<RelpClient> futureClient = clientFactory
                         .open(isa)
                         .orTimeout(connectionTimeout, TimeUnit.MILLISECONDS);
 
                 futureClient.thenAccept(client -> {
                     String offer = ("\nrelp_version=0\nrelp_software=cfe_35\ncommands=" + "syslog" + "\n");
                     LOGGER.debug("transmitting offer <{}>", offer);
-                    CompletableFuture<RelpFrame> openFuture = client
-                            .transmit("open", offer.getBytes(StandardCharsets.US_ASCII));
+
+                    RelpFrame openFrame = relpFrameFactory.create("open", offer);
+                    CompletableFuture<RelpFrame> openFuture = client.transmit(openFrame);
 
                     LOGGER.debug("waiting offer reply");
                     openFuture.thenAccept(openResponse -> {
@@ -136,7 +148,7 @@ public class ParallelTargetRouting implements TargetRouting {
         List<CompletableFuture<RelpFrame>> outputReplyFutures = new ArrayList<>(outputMap.size());
 
         for (String target : routingData.targets) {
-            CompletableFuture<Client> futureClient = outputMap.get(target);
+            CompletableFuture<RelpClient> futureClient = outputMap.get(target);
             if (futureClient == null) {
                 throw new IllegalArgumentException("no such target <[" + target + "]>");
             }
@@ -144,7 +156,15 @@ public class ParallelTargetRouting implements TargetRouting {
             LOGGER.debug("to get a client");
             CompletableFuture<RelpFrame> transmitFuture = futureClient.thenCompose(client -> {
 
-                CompletableFuture<RelpFrame> rv = client.transmit("syslog", routingData.payload);
+                Fragment txn = fragmentStub;
+                Fragment command = fragmentFactory.create("syslog");
+                Fragment payload = fragmentFactory.wrap(routingData.payload);
+                Fragment payloadLength = fragmentFactory.create(payload.size());
+                Fragment endOfTransfer = fragmentFactory.create("\n");
+
+                RelpFrame syslogFrame = new RelpFrameImpl(txn, command, payloadLength, payload, endOfTransfer);
+
+                CompletableFuture<RelpFrame> rv = client.transmit(syslogFrame);
                 totalRecords.inc();
                 totalBytes.inc(routingData.payload.length);
                 return rv;
@@ -158,10 +178,11 @@ public class ParallelTargetRouting implements TargetRouting {
 
     @Override
     public void close() {
-        for (CompletableFuture<Client> futureClient : outputMap.values()) {
+        for (CompletableFuture<RelpClient> futureClient : outputMap.values()) {
             try {
-                Client client = futureClient.get();
-                client.transmit("close", "".getBytes(StandardCharsets.UTF_8));
+                RelpClient client = futureClient.get();
+                RelpFrame closeFrame = relpFrameFactory.create("close", "");
+                client.transmit(closeFrame);
                 client.close();
             }
             catch (Exception e) {

@@ -48,15 +48,16 @@ package com.teragrep.cfe_35.router;
 import com.codahale.metrics.MetricRegistry;
 import com.teragrep.cfe_35.config.RoutingConfig;
 
-import com.teragrep.rlp_03.channel.context.ConnectContextFactory;
-import com.teragrep.rlp_03.channel.socket.PlainFactory;
-import com.teragrep.rlp_03.client.ClientFactory;
-import com.teragrep.rlp_03.eventloop.EventLoop;
-import com.teragrep.rlp_03.eventloop.EventLoopFactory;
+import com.teragrep.net_01.channel.context.ConnectContextFactory;
+import com.teragrep.net_01.channel.socket.PlainFactory;
+import com.teragrep.rlp_03.client.RelpClientFactory;
+import com.teragrep.net_01.eventloop.EventLoop;
+import com.teragrep.net_01.eventloop.EventLoopFactory;
+import com.teragrep.rlp_03.frame.FrameDelegationClockFactory;
 import com.teragrep.rlp_03.frame.delegate.DefaultFrameDelegate;
 import com.teragrep.rlp_03.frame.delegate.FrameContext;
 import com.teragrep.rlp_03.frame.delegate.FrameDelegate;
-import com.teragrep.rlp_03.server.ServerFactory;
+import com.teragrep.net_01.server.ServerFactory;
 
 import org.junit.jupiter.api.*;
 
@@ -113,7 +114,7 @@ public class EmptyTagTest {
                 eventLoop,
                 executorService,
                 new PlainFactory(),
-                () -> new DefaultFrameDelegate(cbFunction)
+                new FrameDelegationClockFactory(() -> new DefaultFrameDelegate(cbFunction))
         );
         serverFactory.create(port);
         ;
@@ -138,7 +139,7 @@ public class EmptyTagTest {
         ExecutorService executorService = Executors.newFixedThreadPool(4); // FIXME this is not cleaned up
 
         ConnectContextFactory connectContextFactory = new ConnectContextFactory(executorService, new PlainFactory());
-        ClientFactory clientFactory = new ClientFactory(connectContextFactory, eventLoop);
+        RelpClientFactory clientFactory = new RelpClientFactory(connectContextFactory, eventLoop);
 
         Supplier<FrameDelegate> routingInstanceSupplier = () -> {
             TargetRouting targetRouting;
@@ -161,7 +162,7 @@ public class EmptyTagTest {
                 eventLoop,
                 executorService,
                 new PlainFactory(),
-                routingInstanceSupplier
+                new FrameDelegationClockFactory(routingInstanceSupplier)
         );
         serverFactory.create(port);
     }

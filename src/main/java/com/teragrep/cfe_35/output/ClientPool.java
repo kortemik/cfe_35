@@ -45,9 +45,9 @@
  */
 package com.teragrep.cfe_35.output;
 
-import com.teragrep.rlp_03.client.Client;
-import com.teragrep.rlp_03.client.ClientFactory;
-import com.teragrep.rlp_03.client.ClientStub;
+import com.teragrep.rlp_03.client.RelpClient;
+import com.teragrep.rlp_03.client.RelpClientFactory;
+import com.teragrep.rlp_03.client.RelpClientStub;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -60,20 +60,20 @@ public class ClientPool implements AutoCloseable {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ClientPool.class);
 
-    private final ClientFactory clientFactory;
+    private final RelpClientFactory clientFactory;
     private final InetSocketAddress inetAddress;
     private final long connectionTimeout;
     private final int maximumPoolSize;
-    private final BlockingQueue<CompletableFuture<Client>> clients;
+    private final BlockingQueue<CompletableFuture<RelpClient>> clients;
 
     private final AtomicLong currentPoolSize;
 
     private final AtomicBoolean close;
 
-    private final ClientStub clientStub;
+    private final RelpClientStub clientStub;
 
     public ClientPool(
-            ClientFactory clientFactory,
+            RelpClientFactory clientFactory,
             InetSocketAddress inetSocketAddress,
             long connectionTimeout,
             int maximumPoolSize
@@ -86,19 +86,19 @@ public class ClientPool implements AutoCloseable {
                 new ArrayBlockingQueue<>(maximumPoolSize),
                 new AtomicLong(),
                 new AtomicBoolean(),
-                new ClientStub()
+                new RelpClientStub()
         );
     }
 
     public ClientPool(
-            ClientFactory clientFactory,
+            RelpClientFactory clientFactory,
             InetSocketAddress inetSocketAddress,
             long connectionTimeout,
             int maximumPoolSize,
-            BlockingQueue<CompletableFuture<Client>> clients,
+            BlockingQueue<CompletableFuture<RelpClient>> clients,
             AtomicLong currentPoolSize,
             AtomicBoolean close,
-            ClientStub clientStub
+            RelpClientStub clientStub
     ) {
         this.clientFactory = clientFactory;
         this.inetAddress = inetSocketAddress;
@@ -110,8 +110,8 @@ public class ClientPool implements AutoCloseable {
         this.clientStub = clientStub;
     }
 
-    CompletableFuture<Client> take() throws InterruptedException {
-        CompletableFuture<Client> client = new CompletableFuture<>();
+    CompletableFuture<RelpClient> take() throws InterruptedException {
+        CompletableFuture<RelpClient> client = new CompletableFuture<>();
         if (close.get()) {
             client.complete(clientStub);
         }
@@ -119,7 +119,7 @@ public class ClientPool implements AutoCloseable {
             long poolSize = currentPoolSize.get();
             if (poolSize < maximumPoolSize) {
                 if (currentPoolSize.compareAndSet(poolSize, poolSize + 1)) {
-                    CompletableFuture<Client> newClient = clientFactory.open(inetAddress);
+                    CompletableFuture<RelpClient> newClient = clientFactory.open(inetAddress);
                     clients.put(newClient);
                 }
             }
@@ -128,12 +128,12 @@ public class ClientPool implements AutoCloseable {
         return client;
     }
 
-    public void offer(Client client) throws InterruptedException {
+    public void offer(RelpClient client) throws InterruptedException {
         if (close.get()) {
             client.close();
         }
         else {
-            CompletableFuture<Client> clientCompletableFuture = new CompletableFuture<>();
+            CompletableFuture<RelpClient> clientCompletableFuture = new CompletableFuture<>();
             clientCompletableFuture.complete(client);
             clients.put(clientCompletableFuture);
         }
@@ -143,7 +143,7 @@ public class ClientPool implements AutoCloseable {
     public void close() {
         close.set(true);
 
-        CompletableFuture<Client> clientCompletableFuture = clients.poll();
+        CompletableFuture<RelpClient> clientCompletableFuture = clients.poll();
         while (clientCompletableFuture != null) {
 
             clientCompletableFuture.whenComplete((client, throwable) -> {
