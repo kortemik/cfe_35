@@ -179,16 +179,16 @@ public class ParallelTargetRouting implements TargetRouting {
     @Override
     public void close() {
         for (CompletableFuture<RelpClient> futureClient : outputMap.values()) {
-            try {
-                RelpClient client = futureClient.get();
+            try (RelpClient client = futureClient.get()) {
+                if (client.isStub()) {
+                    continue;
+                }
                 RelpFrame closeFrame = relpFrameFactory.create("close", "");
                 client.transmit(closeFrame);
-                client.close();
             }
             catch (Exception e) {
-                throw new RuntimeException(e);
+                LOGGER.warn("Failed to close: {}", e.getMessage(), e);
             }
         }
     }
-
 }
